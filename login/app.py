@@ -6,7 +6,7 @@ DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_NAME = os.environ.get('DB_NAME', 'onboarding')
 DB_USER = os.environ.get('DB_USER', 'postgres')
 DB_PASS = os.environ.get('DB_PASS', 'postgres')
-DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_PORT = '5432'
 
 def lambda_handler(event, context):
     if event.get('resource', '') == '/login' and event.get('httpMethod', '') == 'POST':

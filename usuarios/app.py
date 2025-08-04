@@ -1,48 +1,140 @@
+import json
 import psycopg2
 import os
-import json
+import uuid
+import bcrypt
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import smtplib
+import ssl
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_NAME = os.environ.get('DB_NAME', 'onboarding')
 DB_USER = os.environ.get('DB_USER', 'postgres')
 DB_PASS = os.environ.get('DB_PASS', 'postgres')
-DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_PORT = '5432'
+
+EMAIL_REMETENTE = os.environ.get('EMAIL_REMETENTE')
+SENHA_EMAIL = os.environ.get('SENHA_EMAIL')
+
+TOKEN_EXPIRACAO_HORAS = 24  # validade do token
+
+
+def gerar_token():
+    return str(uuid.uuid4())
+
+
+def montar_link_criar_senha(token):
+    return f"https://meusistema.com/criar-senha?token={token}"
+
+
+def hash_senha(senha_plana):
+    return bcrypt.hashpw(senha_plana.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
+    assunto = "Crie sua senha no sistema"
+    corpo_html = f"""
+    <html>
+      <body>
+        <p>Olá, {nome_usuario},</p>
+        <p>Seu usuário foi criado. Para finalizar o cadastro, crie sua senha clicando no link abaixo:</p>
+        <p><a href="{link_criar_senha}">Criar minha senha</a></p>
+        <p>Esse link é válido por 24 horas.</p>
+        <p>Atenciosamente,<br>Equipe</p>
+      </body>
+    </html>
+    """
+    corpo_texto = f"""
+    Olá, {nome_usuario},
+
+    Seu usuário foi criado. Para finalizar o cadastro, acesse o link abaixo para criar sua senha:
+
+    {link_criar_senha}
+
+    Esse link é válido por 24 horas.
+
+    Atenciosamente,
+    Equipe
+    """
+    try:
+        mensagem = MIMEMultipart('alternative')
+        mensagem['Subject'] = assunto
+        mensagem['From'] = EMAIL_REMETENTE
+        mensagem['To'] = email_destino
+
+        mensagem.attach(MIMEText(corpo_texto, 'plain'))
+        mensagem.attach(MIMEText(corpo_html, 'html'))
+
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as server:
+            server.login(EMAIL_REMETENTE, SENHA_EMAIL)
+            server.sendmail(EMAIL_REMETENTE, email_destino, mensagem.as_string())
+        logger.info(f"Email enviado para {email_destino}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao enviar email: {e}")
+        return False
+
 
 def lambda_handler(event, context):
     path = event.get('resource', '')
     http_method = event.get('httpMethod', '')
     response = {'statusCode': 404, 'body': json.dumps({'error': 'Not found'})}
 
-    # POST /usuarios
-    if path == '/usuarios' and http_method == 'POST':
-        data = json.loads(event['body'])
-        nome = data.get('nome')
-        email = data.get('email')
-        role = data.get('role')
-        try:
-            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
+    try:
+        # POST /usuarios - Cria usuário + gera token + envia email
+        if path == '/usuarios' and http_method == 'POST':
+            data = json.loads(event['body'])
+            nome = data.get('nome')
+            email = data.get('email')
+            role = data.get('role', 'user')
+
+            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER,
+                                    password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
-            cur.execute('INSERT INTO usuarios (nome, email, role) VALUES (%s, %s, %s) RETURNING id', (nome, email, role))
+
+            # Insere usuário sem senha
+            cur.execute(
+                'INSERT INTO usuarios (nome, email, role) VALUES (%s, %s, %s) RETURNING id',
+                (nome, email, role)
+            )
             usuario_id = cur.fetchone()[0]
+
+            # Cria token para criação da senha
+            token = gerar_token()
+            expiracao = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRACAO_HORAS)
+
+            # Salva token
+            cur.execute(
+                'INSERT INTO reset_tokens (usuario_id, token, expiracao) VALUES (%s, %s, %s)',
+                (usuario_id, token, expiracao)
+            )
             conn.commit()
             cur.close()
             conn.close()
+
+            # Monta link e envia email
+            link = montar_link_criar_senha(token)
+            sucesso_email = enviar_email_link_criacao(email, nome, link)
+            if not sucesso_email:
+                logger.error("Erro ao enviar email para o usuário")
+
             response = {
                 'statusCode': 201,
                 'body': json.dumps({'id': usuario_id, 'nome': nome, 'email': email, 'role': role}),
                 'headers': {'Content-Type': 'application/json'}
             }
-        except Exception as e:
-            response = {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e)}),
-                'headers': {'Content-Type': 'application/json'}
-            }
 
-    # GET /usuarios
-    elif path == '/usuarios' and http_method == 'GET':
-        try:
-            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
+        # GET /usuarios - Lista usuários
+        elif path == '/usuarios' and http_method == 'GET':
+            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER,
+                                    password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
             cur.execute('SELECT id, nome, email, role FROM usuarios')
             usuarios = [{'id': row[0], 'nome': row[1], 'email': row[2], 'role': row[3]} for row in cur.fetchall()]
@@ -53,59 +145,122 @@ def lambda_handler(event, context):
                 'body': json.dumps(usuarios),
                 'headers': {'Content-Type': 'application/json'}
             }
-        except Exception as e:
-            response = {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e)}),
-                'headers': {'Content-Type': 'application/json'}
-            }
 
-    # PUT /usuarios/{id}
-    elif path == '/usuarios/{id}' and http_method == 'PUT':
-        id = event['pathParameters']['id']
-        data = json.loads(event['body'])
-        nome = data.get('nome')
-        email = data.get('email')
-        role = data.get('role')
-        try:
-            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
+        # PUT /usuarios/{id} - Atualiza dados do usuário
+        elif path == '/usuarios/{id}' and http_method == 'PUT':
+            id_usuario = event['pathParameters']['id']
+            data = json.loads(event['body'])
+            nome = data.get('nome')
+            email = data.get('email')
+            role = data.get('role')
+
+            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER,
+                                    password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
-            cur.execute('UPDATE usuarios SET nome=%s, email=%s, role=%s WHERE id=%s', (nome, email, role, id))
+            cur.execute(
+                'UPDATE usuarios SET nome=%s, email=%s, role=%s WHERE id=%s',
+                (nome, email, role, id_usuario)
+            )
             conn.commit()
             cur.close()
             conn.close()
+
             response = {
                 'statusCode': 200,
-                'body': json.dumps({'id': id, 'nome': nome, 'email': email, 'role': role}),
-                'headers': {'Content-Type': 'application/json'}
-            }
-        except Exception as e:
-            response = {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e)}),
+                'body': json.dumps({'id': id_usuario, 'nome': nome, 'email': email, 'role': role}),
                 'headers': {'Content-Type': 'application/json'}
             }
 
-    # DELETE /usuarios/{id}
-    elif path == '/usuarios/{id}' and http_method == 'DELETE':
-        id = event['pathParameters']['id']
-        try:
-            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
+        # DELETE /usuarios/{id} - Deleta usuário
+        elif path == '/usuarios/{id}' and http_method == 'DELETE':
+            id_usuario = event['pathParameters']['id']
+
+            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER,
+                                    password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
-            cur.execute('DELETE FROM usuarios WHERE id=%s', (id,))
+            cur.execute('DELETE FROM usuarios WHERE id=%s', (id_usuario,))
             conn.commit()
             cur.close()
             conn.close()
+
             response = {
                 'statusCode': 200,
                 'body': json.dumps({'result': 'Usuário deletado'}),
                 'headers': {'Content-Type': 'application/json'}
             }
-        except Exception as e:
+
+        # POST /usuarios/{id}/senha - Cria/atualiza senha usando token
+        elif path == '/usuarios/{id}/senha' and http_method == 'POST':
+            id_usuario = event['pathParameters']['id']
+            data = json.loads(event['body'])
+            token_recebido = data.get('token')
+            nova_senha = data.get('senha')
+
+            if not token_recebido or not nova_senha:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Token e senha são obrigatórios'}),
+                    'headers': {'Content-Type': 'application/json'}
+                }
+
+            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER,
+                                    password=DB_PASS, port=DB_PORT)
+            cur = conn.cursor()
+
+            # Verifica token válido
+            cur.execute(
+                'SELECT id, expiracao FROM reset_tokens WHERE usuario_id = %s AND token = %s',
+                (id_usuario, token_recebido)
+            )
+            row = cur.fetchone()
+
+            if not row:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Token inválido'}),
+                    'headers': {'Content-Type': 'application/json'}
+                }
+
+            token_id, expiracao = row
+            if datetime.utcnow() > expiracao:
+                # Token expirado - apaga token
+                cur.execute('DELETE FROM reset_tokens WHERE id = %s', (token_id,))
+                conn.commit()
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Token expirado'}),
+                    'headers': {'Content-Type': 'application/json'}
+                }
+
+            # Hash da senha nova
+            senha_hash = hash_senha(nova_senha)
+
+            # Atualiza senha do usuário
+            cur.execute('UPDATE usuarios SET senha = %s WHERE id = %s', (senha_hash, id_usuario))
+
+            # Apaga token
+            cur.execute('DELETE FROM reset_tokens WHERE id = %s', (token_id,))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
             response = {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e)}),
+                'statusCode': 200,
+                'body': json.dumps({'message': 'Senha criada com sucesso'}),
                 'headers': {'Content-Type': 'application/json'}
             }
+
+    except Exception as e:
+        logger.error(f"Erro no lambda: {str(e)}", exc_info=True)
+        response = {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)}),
+            'headers': {'Content-Type': 'application/json'}
+        }
 
     return response
