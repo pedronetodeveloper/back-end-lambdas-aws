@@ -14,8 +14,25 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def lambda_handler(event, context):
-    if event.get('resource', '') == '/login' and event.get('httpMethod', '') == 'POST':
-        data = json.loads(event['body'])
+    print("EVENT RAW PATH:", event.get('rawPath'))
+    http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
+    print("HTTP METHOD:", http_method)
+
+    # Tratamento do corpo da requisição (JSON string ou dict)
+    if 'body' in event and isinstance(event['body'], str):
+        try:
+            data = json.loads(event['body'])
+        except json.JSONDecodeError:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Corpo da requisição inválido'}),
+                'headers': {'Content-Type': 'application/json'}
+            }
+    else:
+        data = event  # Caso já seja dict, por exemplo no teste direto do Lambda
+
+    # Verifica se é POST para /login
+    if event.get('rawPath', '') == '/login' and http_method == 'POST':
         email = data.get('email')
         password = data.get('password')
 
@@ -27,7 +44,8 @@ def lambda_handler(event, context):
             }
 
         try:
-            conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
+            conn = psycopg2.connect(
+                host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
             cur.execute('SELECT id, email, senha, role FROM usuarios WHERE email = %s', (email,))
             user = cur.fetchone()
@@ -37,12 +55,14 @@ def lambda_handler(event, context):
             if user:
                 id_, email_db, senha_hash_db, role_db = user
                 senha_calculada = hash_password(password)
+                print(f"Senha calculada: {senha_calculada}")
+                print(f"Senha no banco: {senha_hash_db}")
 
                 if senha_calculada == senha_hash_db:
                     return {
                         'statusCode': 200,
                         'body': json.dumps({
-                            'token': 'fake-jwt-token',
+                            'token': 'jwt-token',
                             'user': {
                                 'id': id_,
                                 'email': email_db,
@@ -66,6 +86,7 @@ def lambda_handler(event, context):
                 'headers': {'Content-Type': 'application/json'}
             }
 
+    # Caso o caminho ou método não seja esperado:
     return {
         'statusCode': 404,
         'body': json.dumps({'error': 'Not found'}),
