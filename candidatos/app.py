@@ -162,6 +162,16 @@ def lambda_handler(event, context):
                 (nome, email, cpf, senha_hash, telefone, estado, vaga, sexo, 'Pendente', empresa)
             )
             candidato_id = cur.fetchone()[0]
+
+            # --- NOVA LÓGICA ADICIONADA ---
+            # 2. Insere na tabela 'usuarios' com a role 'candidato'
+            logger.info(f"Criando registro correspondente na tabela 'usuarios' para o e-mail {email}")
+            role_candidato = 'candidato'
+            cur.execute(
+                'INSERT INTO usuarios (nome, email, senha, role, empresa) VALUES (%s, %s, %s, %s, %s)',
+                (nome, email, senha_hash, role_candidato, empresa)
+            )
+            
             conn.commit()
 
             enviar_email(email, nome, email, senha_plana) # O e-mail ainda envia a senha fácil de lembrar
