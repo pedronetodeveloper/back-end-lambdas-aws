@@ -201,6 +201,43 @@ def lambda_handler(event, context):
                 'statusCode': 200, 'body': json.dumps(candidatos),
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
             }
+        
+        # GET /documentos - Busca documentos do candidato pelo email
+        elif path == '/candidatos/documentos' and http_method == 'GET':
+            logger.info("Executando rota GET /candidatos/documentos.")
+            
+            # --- CORREÇÃO: Lendo o e-mail dos parâmetros da URL (query string) ---
+            query_params = event.get('queryStringParameters') or {}
+            email_candidato = query_params.get('email')
+            
+            # LOG: Verifica o e-mail recebido para o filtro
+            logger.info(f"Tentando buscar documentos para o e-mail: '{email_candidato}'")
+            # email_candidato = data.get('email')
+
+            if not email_candidato:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': "O campo 'email' é obrigatório para buscar documentos."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            cur.execute(
+                'SELECT nome_documento, tipo_documento, status FROM documentos_candidatos WHERE email_candidato = %s',
+                (email_candidato,)
+            )
+            documentos = [
+                {
+                    'nome_documento': r[0],
+                    'tipo_documento': r[1],
+                    'status': r[2]
+                }
+                for r in cur.fetchall()
+            ]
+            return {
+                'statusCode': 200,
+                'body': json.dumps(documentos),
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+            }
 
         # PUT /candidatos
         elif path == '/candidatos' and http_method == 'PUT': # --- CORREÇÃO: Rota consistente ---
