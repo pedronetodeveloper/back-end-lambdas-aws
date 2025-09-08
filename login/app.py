@@ -47,13 +47,13 @@ def lambda_handler(event, context):
             conn = psycopg2.connect(
                 host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS, port=DB_PORT)
             cur = conn.cursor()
-            cur.execute('SELECT id, email, senha, role FROM usuarios WHERE email = %s', (email,))
+            cur.execute('SELECT id, email, senha, role, empresa FROM usuarios WHERE email = %s', (email,))
             user = cur.fetchone()
             cur.close()
             conn.close()
 
             if user:
-                id_, email_db, senha_hash_db, role_db = user
+                id_, email_db, senha_hash_db, role_db, empresa = user
                 senha_calculada = hash_password(password)
                 print(f"Senha calculada: {senha_calculada}")
                 print(f"Senha no banco: {senha_hash_db}")
@@ -66,7 +66,8 @@ def lambda_handler(event, context):
                             'user': {
                                 'id': id_,
                                 'email': email_db,
-                                'role': role_db
+                                'role': role_db,
+                                'empresa': empresa
                             }
                         }),
                         'headers': {'Content-Type': 'application/json'}
