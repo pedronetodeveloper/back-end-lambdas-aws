@@ -7,9 +7,6 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import logging
 import hashlib # --- CORREÇÃO: Importado para hashear a senha ---
-import boto3
-import base64
-import urllib3
 
 # --- MELHORIA: Configuração do Logger no início ---
 logger = logging.getLogger()
@@ -25,10 +22,6 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASS = os.environ.get('EMAIL_PASS')
 EMAIL_PORT = 587
-
-S3_API_GATEWAY_URL = os.environ.get('S3_API_GATEWAY_URL', 'https://ktvl2lg1fh.execute-api.us-east-1.amazonaws.com/generation-uri')
-DOCUMENTS_FOLDER = 'documentos/'
-http = urllib3.PoolManager()
 
 def gerar_senha(cpf):
     cpf_numeros = ''.join(filter(str.isdigit, cpf))
@@ -250,6 +243,208 @@ def lambda_handler(event, context):
             return {
                 'statusCode': 200,
                 'body': json.dumps(documentos),
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+            }
+
+        # PUT /candidatos/documentos/aprovar - Aprova documento pelo nome
+        elif path == '/candidatos/documentos/aprovar' and http_method == 'PUT':
+            logger.info("Executando rota PUT /candidatos/documentos/aprovar.")
+            
+            nome_documento = data.get('nome_documento')
+            email_candidato = data.get('email_candidato')
+            
+            # LOG: Verifica os dados recebidos
+            logger.info(f"Tentando aprovar documento '{nome_documento}' para o candidato '{email_candidato}'")
+
+            if not nome_documento:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': "O campo 'nome_documento' é obrigatório para aprovar um documento."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            if not email_candidato:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': "O campo 'email_candidato' é obrigatório para identificar o candidato."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            # Verifica se o documento existe
+            cur.execute(
+                'SELECT id, status FROM documentos_candidatos WHERE nome_documento = %s AND email_candidato = %s',
+                (nome_documento, email_candidato)
+            )
+            documento_existente = cur.fetchone()
+
+            if not documento_existente:
+                return {
+                    'statusCode': 404,
+                    'body': json.dumps({'error': f"Documento '{nome_documento}' não encontrado para o candidato '{email_candidato}'."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            documento_id, status_atual = documento_existente
+            
+            # LOG: Status atual do documento
+            logger.info(f"Status atual do documento: '{status_atual}'")
+
+            # Atualiza o status para 'Aprovado'
+            cur.execute(
+                'UPDATE documentos_candidatos SET status = %s WHERE id = %s',
+                ('APROVADO', documento_id)
+            )
+            conn.commit()
+
+            logger.info(f"Documento '{nome_documento}' aprovado com sucesso para o candidato '{email_candidato}'")
+
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f"Documento '{nome_documento}' aprovado com sucesso.",
+                    'nome_documento': nome_documento,
+                    'email_candidato': email_candidato,
+                    'status_anterior': status_atual,
+                    'status_atual': 'Aprovado',
+                    'data_aprovacao': datetime.now().isoformat()
+                }),
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+            }
+
+        # PUT /candidatos/documentos/reprovar - Reprova documento pelo nome
+        elif path == '/candidatos/documentos/reprovar' and http_method == 'PUT':
+            logger.info("Executando rota PUT /candidatos/documentos/reprovar.")
+            
+            nome_documento = data.get('nome_documento')
+            email_candidato = data.get('email_candidato')
+            motivo_reprovacao = data.get('motivo_reprovacao', 'Não especificado')
+            
+            # LOG: Verifica os dados recebidos
+            logger.info(f"Tentando reprovar documento '{nome_documento}' para o candidato '{email_candidato}' com motivo: '{motivo_reprovacao}'")
+
+            if not nome_documento:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': "O campo 'nome_documento' é obrigatório para reprovar um documento."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            if not email_candidato:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': "O campo 'email_candidato' é obrigatório para identificar o candidato."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            # Verifica se o documento existe
+            cur.execute(
+                'SELECT id, status FROM documentos_candidatos WHERE nome_documento = %s AND email_candidato = %s',
+                (nome_documento, email_candidato)
+            )
+            documento_existente = cur.fetchone()
+
+            if not documento_existente:
+                return {
+                    'statusCode': 404,
+                    'body': json.dumps({'error': f"Documento '{nome_documento}' não encontrado para o candidato '{email_candidato}'."}),
+                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+                }
+
+            documento_id, status_atual = documento_existente
+            
+            # LOG: Status atual do documento
+            logger.info(f"Status atual do documento: '{status_atual}'")
+
+            # Atualiza o status para 'Reprovado' e adiciona o motivo
+            cur.execute(
+                'UPDATE documentos_candidatos SET status = %s, motivo_reprovacao = %s, data_reprovacao = %s WHERE id = %s',
+                ('Reprovado', motivo_reprovacao, datetime.now(), documento_id)
+            )
+            conn.commit()
+
+            logger.info(f"Documento '{nome_documento}' reprovado com sucesso para o candidato '{email_candidato}'")
+
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f"Documento '{nome_documento}' reprovado com sucesso.",
+                    'nome_documento': nome_documento,
+                    'email_candidato': email_candidato,
+                    'status_anterior': status_atual,
+                    'status_atual': 'Reprovado',
+                    'motivo_reprovacao': motivo_reprovacao,
+                    'data_reprovacao': datetime.now().isoformat()
+                }),
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+            }
+
+        # GET /candidatos/documentos/todos - Lista todos os documentos com filtros
+        elif path == '/candidatos/documentos/todos' and http_method == 'GET':
+            logger.info("Executando rota GET /candidatos/documentos/todos.")
+            
+            query_params = event.get('queryStringParameters') or {}
+            status_filtro = query_params.get('status')  # Filtro opcional por status
+            empresa_filtro = query_params.get('empresa')  # Filtro opcional por empresa
+            
+            # LOG: Parâmetros de filtro recebidos
+            logger.info(f"Filtros aplicados - Status: '{status_filtro}', Empresa: '{empresa_filtro}'")
+
+            # Monta a query base
+            sql_query = '''
+                SELECT dc.nome_documento, dc.tipo_documento, dc.status, dc.email_candidato, 
+                       c.nome as nome_candidato, c.empresa, dc.motivo_reprovacao,
+                       dc.data_aprovacao, dc.data_reprovacao
+                FROM documentos_candidatos dc
+                INNER JOIN candidatos c ON dc.email_candidato = c.email
+            '''
+            params = []
+            conditions = []
+
+            # Adiciona filtros conforme necessário
+            if status_filtro:
+                conditions.append('dc.status = %s')
+                params.append(status_filtro)
+                
+            if empresa_filtro:
+                conditions.append('c.empresa = %s')
+                params.append(empresa_filtro)
+
+            # Adiciona condições WHERE se houver filtros
+            if conditions:
+                sql_query += ' WHERE ' + ' AND '.join(conditions)
+
+            # Ordena por nome do candidato
+            sql_query += ' ORDER BY c.nome, dc.nome_documento'
+
+            cur.execute(sql_query, params)
+            
+            documentos = [
+                {
+                    'nome_documento': r[0],
+                    'tipo_documento': r[1],
+                    'status': r[2],
+                    'email_candidato': r[3],
+                    'nome_candidato': r[4],
+                    'empresa': r[5],
+                    'motivo_reprovacao': r[6],
+                    'data_aprovacao': r[7].isoformat() if r[7] else None,
+                    'data_reprovacao': r[8].isoformat() if r[8] else None
+                }
+                for r in cur.fetchall()
+            ]
+            
+            logger.info(f"Retornando {len(documentos)} documentos.")
+            
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'documentos': documentos,
+                    'total': len(documentos),
+                    'filtros_aplicados': {
+                        'status': status_filtro,
+                        'empresa': empresa_filtro
+                    }
+                }),
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
             }
 

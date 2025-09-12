@@ -85,6 +85,66 @@ def lambda_handler(event, context):
             print("Erro na função:", str(e))
             return response_error(500, str(e))
 
+    elif raw_path == '/download-doc-plataforma' and http_method == 'GET':
+        try:
+            # Pega o nome do arquivo dos query parameters
+            query_params = event.get('queryStringParameters') or {}
+            filename = query_params.get('filename')
+            
+            if not filename:
+                return response_error(400, 'Nome do arquivo não informado no parâmetro filename.')
+
+            key = DOCUMENTS_FOLDER + filename
+
+            # Solicita URL assinada para download (GET)
+            payload = {
+                "operation": "download",
+                "key": key,
+                "expiration": 3600
+            }
+
+            api_response = http.request(
+                'POST',
+                S3_API_GATEWAY_URL,
+                body=json.dumps(payload),
+                headers={'Content-Type': 'application/json'}
+            )
+
+            if api_response.status != 200:
+                print("Erro ao obter URL assinada para download:", api_response.status, api_response.data.decode())
+                return response_error(502, 'Falha ao obter URL assinada para download.')
+
+            presigned_data = json.loads(api_response.data.decode())
+            presigned_url = presigned_data.get('url')
+
+            if not presigned_url:
+                return response_error(502, 'URL assinada não retornada pelo serviço.')
+
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'download_url': presigned_url,
+                    'filename': filename,
+                    'expires_in': 3600
+                }),
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
+            }
+
+        except Exception as e:
+            print("Erro na função de download:", str(e))
+            return response_error(500, str(e))
+
+    elif http_method == 'OPTIONS':
+        # Suporte para CORS preflight
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, filename, Filename'
+            }
+        }
+
     return response_error(404, 'Not found')
 
 def response_error(status, message):
