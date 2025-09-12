@@ -79,7 +79,7 @@ def enviar_email(destinatario, nome_candidato, usuario, senha):
             </div>
             <div class="footer">
                 <p>&copy; {datetime.now().year} DocFlow. Todos os direitos reservados.</p>
-                <p>Dúvidas ou suporte? Entre em contato: (11) 9999-9999 ou com o seu RH.</p>
+                <p>Dúvidas ou suporte? Entre em contato: (11) 95813-6258 ou com o seu RH.</p>
                 <p>Este é um e-mail automático. Por favor, não responda.</p>
             </div>
         </div>
