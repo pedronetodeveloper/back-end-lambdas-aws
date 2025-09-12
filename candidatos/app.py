@@ -7,6 +7,9 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import logging
 import hashlib # --- CORREÇÃO: Importado para hashear a senha ---
+import boto3
+import base64
+import urllib3
 
 # --- MELHORIA: Configuração do Logger no início ---
 logger = logging.getLogger()
@@ -22,6 +25,10 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASS = os.environ.get('EMAIL_PASS')
 EMAIL_PORT = 587
+
+S3_API_GATEWAY_URL = os.environ.get('S3_API_GATEWAY_URL', 'https://ktvl2lg1fh.execute-api.us-east-1.amazonaws.com/generation-uri')
+DOCUMENTS_FOLDER = 'documentos/'
+http = urllib3.PoolManager()
 
 def gerar_senha(cpf):
     cpf_numeros = ''.join(filter(str.isdigit, cpf))
@@ -53,6 +60,9 @@ def enviar_email(destinatario, nome_candidato, usuario, senha):
             .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
             .credentials {{ background-color: #f9f9f9; border-left: 5px solid {cor_principal}; padding: 15px; margin: 20px 0; }}
             .credentials p {{ margin: 5px 0; }}
+            .btn-container {{ text-align: center; margin: 30px 0; }}
+            .btn-plataforma {{ background-color: {cor_principal}; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; transition: background-color 0.3s; }}
+            .btn-plataforma:hover {{ background-color: #4A148C; }}
             .footer {{ background-color: #f4f4f4; color: #888888; text-align: center; padding: 20px; font-size: 12px; }}
         </style>
     </head>
@@ -68,11 +78,15 @@ def enviar_email(destinatario, nome_candidato, usuario, senha):
                     <p><strong>Usuário:</strong> {usuario}</p>
                     <p><strong>Senha Provisória:</strong> os 3 primeiros e os 2 últimos dígitos do seu CPF.</p>
                 </div>
+                <div class="btn-container">
+                    <a href="https://docflow.com.br/login" class="btn-plataforma">Acessar Plataforma</a>
+                </div>
                 <p>Recomendamos que você acesse a plataforma assim que possível para dar continuidade ao seu processo de contratação.</p>
                 <p>Atenciosamente,<br>Equipe DocFlow</p>
             </div>
             <div class="footer">
                 <p>&copy; {datetime.now().year} DocFlow. Todos os direitos reservados.</p>
+                <p>Dúvidas ou suporte? Entre em contato: (11) 9999-9999 ou com o seu RH.</p>
                 <p>Este é um e-mail automático. Por favor, não responda.</p>
             </div>
         </div>

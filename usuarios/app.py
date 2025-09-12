@@ -61,8 +61,9 @@ def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
             .header p {{ margin: 10px 0 0; font-size: 16px; opacity: 0.9; }}
             .content {{ padding: 30px; color: #333333; line-height: 1.6; }}
             .content p {{ margin: 0 0 20px; }}
-            .button-container {{ text-align: center; margin: 30px 0; }}
-            .button {{ background-color: {cor_principal}; color: #ffffff; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; }}
+            .btn-container {{ text-align: center; margin: 30px 0; }}
+            .btn-plataforma {{ background-color: {cor_principal}; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; transition: background-color 0.3s; }}
+            .btn-plataforma:hover {{ background-color: #4A148C; }}
             .footer {{ background-color: #f4f4f4; color: #888888; text-align: center; padding: 20px; font-size: 12px; }}
             .footer a {{ color: {cor_principal}; text-decoration: none; }}
         </style>
@@ -77,8 +78,8 @@ def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
                 <p>Olá, {nome_usuario},</p>
                 <p>Seu acesso à plataforma DocFlow foi criado com sucesso. Para garantir a segurança da sua conta, o próximo passo é definir uma senha pessoal.</p>
                 <p>Por favor, clique no botão abaixo para criar sua senha. Este link é válido por 24 horas.</p>
-                <div class="button-container">
-                    <a href="{link_criar_senha}" class="button">Criar Minha Senha</a>
+                <div class="btn-container">
+                    <a href="{link_criar_senha}" class="btn-plataforma">Criar Minha Senha</a>
                 </div>
                 <p>Se o botão não funcionar, você também pode copiar e colar o seguinte link no seu navegador:</p>
                 <p><a href="{link_criar_senha}" style="color: {cor_principal}; word-break: break-all;">{link_criar_senha}</a></p>
@@ -87,6 +88,7 @@ def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
             <div class="footer">
                 <p>&copy; {datetime.now().year} DocFlow. Todos os direitos reservados.</p>
                 <p>Se você não solicitou este e-mail, por favor, ignore-o.</p>
+                <p>Dúvidas ou suporte? Entre em contato: (11) 9999-9999.</p>
             </div>
         </div>
     </body>
