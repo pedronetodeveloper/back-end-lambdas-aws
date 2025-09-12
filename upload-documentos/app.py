@@ -37,9 +37,21 @@ def lambda_handler(event, context):
 
             # Pega o nome do arquivo no header 'filename'
             headers = event.get('headers') or {}
-            filename = headers.get('filename') or headers.get('Filename')  # tenta com case diferente também
+            filename = headers.get('filename') or headers.get('Filename')
+
             if not filename:
-                return response_error(400, 'Nome do arquivo não informado no header.')
+                body_json = None
+                if isinstance(body, str):
+                    try:
+                        body_json = json.loads(body)
+                    except json.JSONDecodeError:
+                        body_json = None
+                
+                if isinstance(body_json, dict):
+                    filename = body_json.get('filename') or body_json.get('Filename')
+
+            if not filename:
+                return response_error(400, 'Nome do arquivo não informado no header ou no corpo da requisição.')
 
             key = DOCUMENTS_FOLDER + filename
 

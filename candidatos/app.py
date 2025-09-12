@@ -75,7 +75,7 @@ def enviar_email(destinatario, nome_candidato, usuario, senha):
                     <a href="https://docflow.com.br/login" class="btn-plataforma">Acessar Plataforma</a>
                 </div>
                 <p>Recomendamos que você acesse a plataforma assim que possível para dar continuidade ao seu processo de contratação.</p>
-                <p>Atenciosamente,<br>Equipe DocFlow</p>
+                <p>Atenciosamente,<br>Equipe DocFlow Emai: rh@docflow.com.br</p>
             </div>
             <div class="footer">
                 <p>&copy; {datetime.now().year} DocFlow. Todos os direitos reservados.</p>

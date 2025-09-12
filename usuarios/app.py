@@ -87,7 +87,7 @@ def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
             </div>
             <div class="footer">
                 <p>&copy; {datetime.now().year} DocFlow. Todos os direitos reservados.</p>
-                <p>Se você não solicitou este e-mail, por favor, ignore-o.</p>
+                <p>Se você não solicitou este e-mail, por favor, desconsidere está mensagem ou e-mail.</p>
                 <p>Dúvidas ou suporte? Entre em contato: (11) 9999-9999.</p>
             </div>
         </div>
