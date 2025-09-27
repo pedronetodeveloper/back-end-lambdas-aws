@@ -10,6 +10,9 @@ http = urllib3.PoolManager()
 def lambda_handler(event, context):
     print('Entrou na função Lambda')
     print("Evento recebido:", json.dumps(event))
+    print(f"requestContext: {event.get('requestContext')}")
+    print(f"rawPath: {event.get('rawPath')}")
+    print(f"Headers recebidos: {event.get('headers')}")
 
     http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
     raw_path = event.get('rawPath', '')
@@ -19,39 +22,54 @@ def lambda_handler(event, context):
             body = event.get('body')
             is_base64 = event.get('isBase64Encoded', False)
 
-            print("Headers:", event.get('headers'))
-            print("Is base64?", is_base64)
-            print("Tipo do body:", type(body))
+            print(f"Body recebido: tipo={type(body)}, tamanho={len(body) if isinstance(body, str) else 'n/a'}")
+            print(f"isBase64Encoded: {is_base64}")
 
             if not body:
+                print("Body vazio!")
                 return response_error(400, 'Corpo da requisição está vazio.')
 
-            # Decodifica o conteúdo do arquivo
-            if is_base64:
-                file_content = base64.b64decode(body)
-            else:
-                if isinstance(body, bytes):
+            headers = event.get('headers') or {}
+            filename = headers.get('filename') or headers.get('Filename')
+            file_content = None
+
+            body_json = None
+            if isinstance(body, str):
+                try:
+                    body_json = json.loads(body)
+                    print(f"Body JSON decodificado: {body_json}")
+                except json.JSONDecodeError:
+                    print("Body não é um JSON válido!")
+                    body_json = None
+
+            if isinstance(body_json, dict):
+                filename = filename or body_json.get('filename') or body_json.get('Filename')
+                file_content_b64 = body_json.get('file_content')
+                print(f"filename extraído do JSON: {filename}")
+                print(f"file_content_b64 presente? {'Sim' if file_content_b64 else 'Não'}")
+                if file_content_b64:
+                    try:
+                        file_content = base64.b64decode(file_content_b64)
+                        print(f"file_content decodificado: tamanho={len(file_content)} bytes")
+                    except Exception as e:
+                        print(f"Erro ao decodificar file_content: {e}")
+                        return response_error(400, f"Erro ao decodificar file_content: {e}")
+
+            if file_content is None:
+                print("file_content não veio no JSON, tentando modo antigo...")
+                if is_base64:
+                    file_content = base64.b64decode(body)
+                elif isinstance(body, bytes):
                     file_content = body
                 else:
                     file_content = body.encode('utf-8')
-
-            # Pega o nome do arquivo no header 'filename'
-            headers = event.get('headers') or {}
-            filename = headers.get('filename') or headers.get('Filename')
+                print(f"file_content modo antigo: tamanho={len(file_content) if file_content else 'n/a'} bytes")
 
             if not filename:
-                body_json = None
-                if isinstance(body, str):
-                    try:
-                        body_json = json.loads(body)
-                    except json.JSONDecodeError:
-                        body_json = None
-                
-                if isinstance(body_json, dict):
-                    filename = body_json.get('filename') or body_json.get('Filename')
-
-            if not filename:
+                print("filename não informado!")
                 return response_error(400, 'Nome do arquivo não informado no header ou no corpo da requisição.')
+
+            print(f"Chave do S3: {DOCUMENTS_FOLDER + filename}")
 
             key = DOCUMENTS_FOLDER + filename
 
@@ -61,6 +79,8 @@ def lambda_handler(event, context):
                 "expiration": 3600
             }
 
+            print(f"Payload para API Gateway: {payload}")
+
             api_response = http.request(
                 'POST',
                 S3_API_GATEWAY_URL,
@@ -68,14 +88,15 @@ def lambda_handler(event, context):
                 headers={'Content-Type': 'application/json'}
             )
 
+            print(f"Resposta da API Gateway: status={api_response.status}")
             if api_response.status != 200:
                 print("Erro ao obter URL assinada:", api_response.status, api_response.data.decode())
                 return response_error(502, 'Falha ao obter URL assinada.')
 
             presigned_data = json.loads(api_response.data.decode())
             presigned_url = presigned_data.get('url')
+            print(f"URL assinada recebida: {presigned_url}")
 
-            # Upload do arquivo via PUT usando a URL assinada
             put_response = http.request(
                 'PUT',
                 presigned_url,
@@ -83,32 +104,31 @@ def lambda_handler(event, context):
                 headers={'Content-Type': 'application/pdf'}
             )
 
+            print(f"Resposta do PUT no S3: status={put_response.status}")
             if put_response.status not in [200, 201]:
                 print("Erro ao enviar arquivo para o S3:", put_response.status, put_response.data.decode())
                 return response_error(502, 'Falha ao enviar o arquivo para o S3.')
 
+            print(f"Upload realizado com sucesso! URL: {presigned_url.split('?')[0]}")
             return {
                 'statusCode': 200,
                 'body': json.dumps({'url': presigned_url.split('?')[0]}),
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
             }
-
         except Exception as e:
             print("Erro na função:", str(e))
             return response_error(500, str(e))
 
     elif raw_path == '/download-doc-plataforma' and http_method == 'GET':
         try:
-            # Pega o nome do arquivo dos query parameters
             query_params = event.get('queryStringParameters') or {}
             filename = query_params.get('filename')
-            
+
             if not filename:
                 return response_error(400, 'Nome do arquivo não informado no parâmetro filename.')
 
             key = DOCUMENTS_FOLDER + filename
 
-            # Solicita URL assinada para download (GET)
             payload = {
                 "operation": "download",
                 "key": key,
@@ -141,7 +161,6 @@ def lambda_handler(event, context):
                 }),
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'}
             }
-
         except Exception as e:
             print("Erro na função de download:", str(e))
             return response_error(500, str(e))
@@ -158,6 +177,8 @@ def lambda_handler(event, context):
         }
 
     return response_error(404, 'Not found')
+
+    # Removido bloco duplicado e corrigida indentação dos elif
 
 def response_error(status, message):
     return {
