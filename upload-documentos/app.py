@@ -29,8 +29,25 @@ def lambda_handler(event, context):
                 print("Body vazio!")
                 return response_error(400, 'Corpo da requisição está vazio.')
 
+
             headers = event.get('headers') or {}
             filename = headers.get('filename') or headers.get('Filename')
+
+            email = headers.get('email') or headers.get('Email')
+            content_type = headers.get('content-type') or headers.get('Content-Type')
+
+            # Força o content_type correto baseado na extensão do arquivo
+            if filename:
+                ext = filename.lower().split('.')[-1]
+                if ext == 'pdf':
+                    content_type = 'application/pdf'
+                elif ext in ['png']:
+                    content_type = 'image/png'
+                elif ext in ['jpg', 'jpeg']:
+                    content_type = 'image/jpeg'
+                elif ext in ['gif']:
+                    content_type = 'image/gif'
+                # Adicione outros tipos conforme necessário
             file_content = None
 
             body_json = None
@@ -44,8 +61,12 @@ def lambda_handler(event, context):
 
             if isinstance(body_json, dict):
                 filename = filename or body_json.get('filename') or body_json.get('Filename')
+                email = email or body_json.get('email') or body_json.get('Email')
+                content_type = content_type or body_json.get('content_type') or body_json.get('Content_Type')
                 file_content_b64 = body_json.get('file_content')
                 print(f"filename extraído do JSON: {filename}")
+                print(f"email extraído: {email}")
+                print(f"content_type extraído: {content_type}")
                 print(f"file_content_b64 presente? {'Sim' if file_content_b64 else 'Não'}")
                 if file_content_b64:
                     try:
@@ -76,7 +97,9 @@ def lambda_handler(event, context):
             payload = {
                 "operation": "upload",
                 "key": key,
-                "expiration": 3600
+                "expiration": 3600,
+                "email": email,  # Adicionado para garantir metadado na URL assinada
+                "content_type": content_type  # Garante que o Content-Type da URL assinada será igual ao do PUT
             }
 
             print(f"Payload para API Gateway: {payload}")
@@ -97,11 +120,19 @@ def lambda_handler(event, context):
             presigned_url = presigned_data.get('url')
             print(f"URL assinada recebida: {presigned_url}")
 
+
+            # Define o Content-Type dinamicamente
+            put_headers = {'Content-Type': content_type or 'application/octet-stream'}
+            if email:
+                put_headers['x-amz-meta-email'] = email
+                print(f"Adicionando metadado x-amz-meta-email: {email}")
+            print(f"Content-Type usado no upload: {put_headers['Content-Type']}")
+
             put_response = http.request(
                 'PUT',
                 presigned_url,
                 body=file_content,
-                headers={'Content-Type': 'application/pdf'}
+                headers=put_headers
             )
 
             print(f"Resposta do PUT no S3: status={put_response.status}")
