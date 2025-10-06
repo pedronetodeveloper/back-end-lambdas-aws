@@ -31,9 +31,9 @@ TOKEN_EXPIRACAO_HORAS = 24  # validade do token
 def gerar_token():
     return str(uuid.uuid4())
 
-def montar_link_criar_senha(token):
+def montar_link_criar_senha(token,ur):
     # O ideal é que essa URL base também venha de uma variável de ambiente
-    return f"https://sua-plataforma.com/definir-senha?token={token}"
+    return f"https://sua-plataforma.com/definir-senha?token={token}&ur={ur}"
 
 # Função de hash SHA256
 def hash_senha(password: str) -> str:
@@ -44,7 +44,7 @@ def enviar_email_link_criacao(email_destino, nome_usuario, link_criar_senha):
     assunto = "Bem-vindo ao DocFlow! Crie sua senha de acesso."
     
     # --- TEMPLATE PERSONALIZADO PARA DOCFLOW ---
-    cor_principal = "#BA68C8" # Cor padrão do projeto
+    cor_principal = "#9C27B0" # Cor padrão do projeto
     slogan = "Funcionalidades prontas para agilizar suas contratações" # Slogan do TCC
     
     corpo_html = f"""
@@ -201,7 +201,7 @@ def lambda_handler(event, context):
             
             # LOG: Antes de chamar a função de envio de e-mail
             logger.info(f"Dados do usuário salvos. Chamando a função para enviar e-mail para {email}...")
-            link = montar_link_criar_senha(token)
+            link = montar_link_criar_senha(token,usuario_id)
             sucesso_email = enviar_email_link_criacao(email, nome, link)
 
             # LOG: Verifica o resultado do envio
@@ -284,6 +284,7 @@ def lambda_handler(event, context):
         elif path.startswith('/usuarios/') and path.endswith('/senha') and http_method == 'POST':
             id_usuario = event.get('pathParameters', {}).get('id')
             token_recebido = data.get('token')
+            # id_usuario = data.get('ur')
             nova_senha = data.get('senha')
 
             if not token_recebido or not nova_senha:

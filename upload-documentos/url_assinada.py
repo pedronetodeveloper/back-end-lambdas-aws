@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from botocore.exceptions import ClientError, NoCredentialsError
 
 # 🔧 Configurações
-ACCESS_POINT_ARN = "arn:aws:s3:us-east-1:488384385831:accesspoint/docs-process-tcc"
+ACCESS_POINT_ARN = "arn:aws:s3:us-east-1:808155513803:accesspoint/docs-rh"
 REGION = "us-east-1"
 DEFAULT_EXPIRATION = 3600  # 1 hora em segundos
 
