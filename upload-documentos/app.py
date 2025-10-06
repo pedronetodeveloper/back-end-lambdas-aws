@@ -1,4 +1,3 @@
-import boto3
 import os
 import json
 import base64
@@ -34,6 +33,7 @@ def lambda_handler(event, context):
             filename = headers.get('filename') or headers.get('Filename')
 
             email = headers.get('email') or headers.get('Email')
+            document_type = headers.get('document-type') or headers.get('Document_Type')
             content_type = headers.get('content-type') or headers.get('Content-Type')
 
             # Força o content_type correto baseado na extensão do arquivo
@@ -62,11 +62,13 @@ def lambda_handler(event, context):
             if isinstance(body_json, dict):
                 filename = filename or body_json.get('filename') or body_json.get('Filename')
                 email = email or body_json.get('email') or body_json.get('Email')
+                document_type = document_type or body_json.get('document_type') or body_json.get('Document_Type')
                 content_type = content_type or body_json.get('content_type') or body_json.get('Content_Type')
                 file_content_b64 = body_json.get('file_content')
                 print(f"filename extraído do JSON: {filename}")
                 print(f"email extraído: {email}")
                 print(f"content_type extraído: {content_type}")
+                print(f"document_type extraído: {document_type}")
                 print(f"file_content_b64 presente? {'Sim' if file_content_b64 else 'Não'}")
                 if file_content_b64:
                     try:
@@ -99,7 +101,8 @@ def lambda_handler(event, context):
                 "key": key,
                 "expiration": 3600,
                 "email": email,  # Adicionado para garantir metadado na URL assinada
-                "content_type": content_type  # Garante que o Content-Type da URL assinada será igual ao do PUT
+                "content_type": content_type,  # Garante que o Content-Type da URL assinada será igual ao do PUT
+                "document_type": document_type
             }
 
             print(f"Payload para API Gateway: {payload}")
@@ -120,12 +123,14 @@ def lambda_handler(event, context):
             presigned_url = presigned_data.get('url')
             print(f"URL assinada recebida: {presigned_url}")
 
-
             # Define o Content-Type dinamicamente
             put_headers = {'Content-Type': content_type or 'application/octet-stream'}
             if email:
                 put_headers['x-amz-meta-email'] = email
                 print(f"Adicionando metadado x-amz-meta-email: {email}")
+            if document_type:
+                put_headers['x-amz-meta-document-type'] = document_type
+                print(f"Adicionando metadado x-amz-meta-document-type: {document_type}")
             print(f"Content-Type usado no upload: {put_headers['Content-Type']}")
 
             put_response = http.request(
@@ -208,8 +213,6 @@ def lambda_handler(event, context):
         }
 
     return response_error(404, 'Not found')
-
-    # Removido bloco duplicado e corrigida indentação dos elif
 
 def response_error(status, message):
     return {
