@@ -49,6 +49,7 @@ def lambda_handler(event, context):
             cur = conn.cursor()
             cur.execute('SELECT id, email, senha, role, empresa FROM usuarios WHERE email = %s', (email,))
             user = cur.fetchone()
+            print("Resultado da consulta:", user) # Adicione esta linha
             cur.close()
             conn.close()
 
